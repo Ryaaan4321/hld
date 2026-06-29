@@ -1,12 +1,11 @@
 import { redis } from "./lib/rate-limiter.js";
+import { attempt } from "./sliding-window.js";
 
 const WINDOW_SECONDS = 60;
 const LIMIT = 10;
 
 
-const LUA_SCRIPT=`
 
-`
 export const rateMiddleware = async (req, res, next) => {
     try {
         const ip = req.ip;

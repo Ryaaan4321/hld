@@ -1,13 +1,12 @@
 import dotenv from 'dotenv'
 import express from 'express';
 dotenv.config();
-import { rateMiddleware } from './middleware.js';
-import { redis } from './lib/rate-limiter.js';
+import { rm1 } from './m1.js';
 
 const app = express();
 const router = express.Router();
 
-router.get('/', rateMiddleware, async function (req, res) {
+router.get('/', rm1, async function (req, res) {
     try {
         return res.status(200).json("we are running fine");
     } catch (e) {
