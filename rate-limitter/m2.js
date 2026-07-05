@@ -1,9 +1,10 @@
 import { sliding_window_counter } from "./sliding-window.counter.js";
 const DEFAULT_CONFIG = {
-    maxRequests: 10,
+    maxRequests: 100,
     windowSeconds: 60,
 };
 export const rm2 = async (req, res, next) => {
+    console.log("middleware got calledd");
     try {
         const ip = req.ip;
 

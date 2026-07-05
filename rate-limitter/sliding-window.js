@@ -35,7 +35,7 @@ end
 `;
 
 const DEFAULT_CONFIG = {
-    maxRequests: 10,
+    maxRequests: 300,
     windowSeconds: 60,
 };
 export async function attempt(key, config = DEFAULT_CONFIG) {
@@ -46,11 +46,11 @@ export async function attempt(key, config = DEFAULT_CONFIG) {
     const result = await redis.eval(
         LUA_SCRIPT,
         1,                  /* number of KEYS */
-        key,                // KEYS[1]
-        maxRequests,        // ARGV[1]
-        windowSeconds,      // ARGV[2]
-        now,                // ARGV[3]
-        member              // ARGV[4]
+        key,                /* KEYS[1] */
+        maxRequests,        /* ARGV[1] */
+        windowSeconds,      /* ARGV[2] */
+        now,                /* ARGV[3] */
+        member              /* ARGV[4] */
     );
     const allowed = result[0] === 1;
     const remaining = result[1];

@@ -1,12 +1,13 @@
-import dotenv from 'dotenv'
 import express from 'express';
+import dotenv from 'dotenv'
 dotenv.config();
 import { rm2 } from './m2.js';
+import { rm1 } from './m1.js';
 
 const app = express();
 const router = express.Router();
 
-router.get('/', rm2, async function (req, res) {
+router.get('/', rm1, async function (req, res) {
     try {
         return res.status(200).json("we are running fine");
     } catch (e) {

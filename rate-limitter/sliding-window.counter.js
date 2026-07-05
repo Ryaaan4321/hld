@@ -38,6 +38,7 @@ export async function sliding_window_counter(key, config) {
     const currentKey = `{${key}}:${currentWindow}`;
     const previousKey = `{${key}}:${previousWindow}`;
     const elapsed = (now % windowSeconds) / windowSeconds;
+    await redis.flushall();
     console.log({
         currentKey,
         previousKey,
@@ -53,7 +54,8 @@ export async function sliding_window_counter(key, config) {
         windowSeconds.toString(),
         elapsed.toString()
     );
-
+    const hget=await redis.call('HGETALL',currentKey)
+    console.log("h get == ",hget);
     const allowed = result[0] === 1;
     const remaining = result[1];
 
