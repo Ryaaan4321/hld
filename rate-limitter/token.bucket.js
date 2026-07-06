@@ -1,3 +1,5 @@
+import { redis } from "./lib/rate-limiter.js";
+
 const LUA_SCRIPT = `
 local key = KEYS[1]
 local max_tokens = tonumber(ARGV[1])
@@ -36,3 +38,31 @@ redis.call('EXPIRE', key, math.ceil(max_tokens / refill_rate) + 1)
 
 return { allowed, math.floor(remaining) }
 `;
+
+const DEFAULT_CONFIG = {
+  maxTokens: 100,     /* bucket size (max burst allowed) */
+  refillRate: 5,      // tokens added per second  in the bucket
+};
+
+export async function attemptTokenBucket(key, config = DEFAULT_CONFIG) {
+  const { maxTokens, refillRate } = config;
+  const now = Date.now() / 1000; // convert to sec to match refillRate units
+
+  const result = await redis.eval(
+    LUA_SCRIPT,
+    1,
+    key,
+    maxTokens,
+    refillRate,
+    now
+  );
+
+  const allowed = result[0] === 1;
+  const remaining = result[1];
+
+  return {
+    allowed,
+    remaining,
+    limit: maxTokens,
+  };
+}
