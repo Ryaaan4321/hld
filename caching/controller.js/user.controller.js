@@ -3,6 +3,9 @@ import pool from '../lib/db.js'
 import redis from '../lib/redis.js';
 import logger from '../lib/logger.js';
 import { randomUUID } from 'crypto';
+function sleep(ms) {
+    return new Promise(res => setTimeout(res, ms));
+}
 export async function createUser(req, res) {
     try {
         const name = req.body.name;
@@ -64,6 +67,59 @@ export async function getUser(req, res) {
         }
         return res.status(200).json({ user: result.rows[0] });
     } catch (e) {
+        return res.status(500).json({ msg: e.message });
+    }
+}
+
+export async function getAllUserMutex(req, res) {
+    const reqId = req.id; 
+    try {
+        let cachedData = await redis.get('allUser');
+        if (cachedData) {
+            logger.info({ reqId, source: 'redis' }, 'cache hit');
+            return res.status(200).json({ users: JSON.parse(cachedData) });
+        }
+        const lockKey = 'lock:allUser';
+        const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 5);
+        if (lockAcquired) {
+            logger.info({ reqId, source: 'lock_acquired' }, 'acquired lock, querying db');
+            try {
+                const start = Date.now();
+                const dbRes = await pool.query('SELECT * FROM users');
+                const durationMs = Date.now() - start;
+                const result = dbRes.rows;
+                await redis.set('allUser', JSON.stringify(result), 'EX', 30);
+                logger.info(
+                    { reqId, source: 'db', durationMs, rowCount: result.length },
+                    'db query completed, cache repopulated'
+                );
+                return res.status(200).json({ users: result });
+            } finally {
+                await redis.del(lockKey);
+                logger.info({ reqId, source: 'lock_released' }, 'lock released');
+            }
+        } else {
+            logger.info({ reqId, source: 'lock_wait' }, 'lock held by another request, waiting');
+            for (let i = 0; i < 5; i++) {
+                await sleep(100);
+                cachedData = await redis.get('allUser');
+                if (cachedData) {
+                    logger.info({ reqId, source: 'redis_after_wait' }, 'got cache after waiting');
+                    return res.status(200).json({ users: JSON.parse(cachedData) });
+                }
+            }
+            logger.warn({ reqId, source: 'fallback_db' }, 'gave up waiting on lock, querying db directly');
+            const start = Date.now();
+            const dbRes = await pool.query('SELECT * FROM users');
+            const durationMs = Date.now() - start;
+            logger.info(
+                { reqId, source: 'db_fallback', durationMs, rowCount: dbRes.rows.length },
+                'fallback db query completed'
+            );
+            return res.status(200).json({ users: dbRes.rows });
+        }
+    } catch (e) {
+        logger.error({ reqId, err: e.message }, 'getAllUserMutex failed');
         return res.status(500).json({ msg: e.message });
     }
 }
