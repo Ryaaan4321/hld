@@ -3,9 +3,25 @@ import pool from '../lib/db.js'
 import redis from '../lib/redis.js';
 import logger from '../lib/logger.js';
 import { randomUUID } from 'crypto';
+/* can you do one thing fire the post request and the get request with the 
+ close to none window and than check the latency of all this controllers*/
 function sleep(ms) {
     return new Promise(res => setTimeout(res, ms));
 }
+function jitteredTTL(baseSeconds, jitterSeconds) {
+    const offset = Math.floor(Math.random() * (2 * jitterSeconds + 1)) - jitterSeconds;
+    return baseSeconds + offset;
+}
+/*
+Since we have only have one key (allUser), jitter won't visibly 
+change our stampede behavior in this project — this technique's
+value only shows up when we have many hot keys expiring together,
+which isn't our current setup. So the correct way to think about this 
+exercise:  (the offset math, the Redis TTL actually varying), not that it "
+fixes" anything observable in our single-key project. our lock-based 
+approach from before is what's actually doing the real stampede protection here.
+*/
+
 export async function createUser(req, res) {
     try {
         const name = req.body.name;
@@ -72,7 +88,7 @@ export async function getUser(req, res) {
 }
 
 export async function getAllUserMutex(req, res) {
-    const reqId = req.id; 
+    const reqId = req.id;
     try {
         let cachedData = await redis.get('allUser');
         if (cachedData) {
@@ -88,7 +104,7 @@ export async function getAllUserMutex(req, res) {
                 const dbRes = await pool.query('SELECT * FROM users');
                 const durationMs = Date.now() - start;
                 const result = dbRes.rows;
-                await redis.set('allUser', JSON.stringify(result), 'EX', 30);
+                await redis.set('allUser', JSON.stringify(result), 'EX', 60);
                 logger.info(
                     { reqId, source: 'db', durationMs, rowCount: result.length },
                     'db query completed, cache repopulated'
@@ -121,5 +137,58 @@ export async function getAllUserMutex(req, res) {
     } catch (e) {
         logger.error({ reqId, err: e.message }, 'getAllUserMutex failed');
         return res.status(500).json({ msg: e.message });
+    }
+}
+const SOFT_TTL_SECONDS = 30;   // data considered stale after this
+const HARD_TTL_SECONDS = 60;  // data actually deleted after this
+export async function getAllUserSWR(req, res) {
+    const reqId = req.id;
+    try {
+        const cachedRaw = await redis.get('allUser');
+        if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            const ageSeconds = (Date.now() - cached.cachedAt) / 1000;
+            if (ageSeconds < SOFT_TTL_SECONDS) {
+                logger.info({ reqId, source: 'redis_fresh' }, 'cache hit, fresh');
+                return res.status(200).json({ users: cached.data });
+            }
+            /* Stale but still within hard TTL — serve immediately, refresh in background */
+            logger.info({ reqId, source: 'redis_stale' }, 'cache hit, stale — serving anyway, triggering refresh');
+            res.status(200).json({ users: cached.data });
+            triggerBackgroundRefresh(reqId); /* fire and forget, no await */
+            return;
+        }
+        logger.info({ reqId, source: 'true_miss' }, 'no cached data at all, blocking on db');
+        const result = await refreshCache(reqId);
+        return res.status(200).json({ users: result });
+    } catch (e) {
+        logger.error({ reqId, err: e.message }, 'getAllUserSWR failed');
+        return res.status(500).json({ msg: e.message });
+    }
+}
+async function refreshCache(reqId) {
+    const start = Date.now();
+    const dbRes = await pool.query('SELECT * FROM users');
+    const durationMs = Date.now() - start;
+    const result = dbRes.rows;
+    const payload = { data: result, cachedAt: Date.now() };
+    const ttl = jitteredTTL(HARD_TTL_SECONDS, 20);
+    await redis.set('allUser', JSON.stringify(payload), 'EX', ttl);
+    logger.info({ reqId, source: 'db', durationMs, rowCount: result.length, ttl }, 'cache refreshed');
+    return result;
+}
+async function triggerBackgroundRefresh(reqId) {
+    const lockKey = 'refreshing:allUser';
+    const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
+    if (!lockAcquired) {
+        logger.info({ reqId, source: 'refresh_already_in_flight' }, 'someone else already refreshing, skipping');
+        return;
+    }
+    try {
+        await refreshCache(reqId);
+    } catch (e) {
+        logger.error({ reqId, err: e.message }, 'background refresh failed');
+    } finally {
+        await redis.del(lockKey);
     }
 }
