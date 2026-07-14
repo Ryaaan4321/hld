@@ -7,6 +7,7 @@ function sleep(ms) {
     return new Promise(res => setTimeout(res, ms));
 }
 export async function createUser(req, res) {
+    const client = await pool.connect()
     try {
         const name = req.body.name;
         const email = req.body.email
@@ -18,43 +19,47 @@ export async function createUser(req, res) {
         return res.status(200).json({ users: result.rows[0] });
     }
     catch (e) {
+        await client.release()
         return res.status(500).json({ msg: e });
     }
 }
 export async function getAllUser(req, res) {
+    const client = await pool.connect()
     const reqId = randomUUID().slice(0, 8);
     const start = process.hrtime.bigint();
     try {
-        const cachedData = await redis.get('allUser');
+        const cachedData = await redis.get("allUser");
         let result;
         let source;
         if (cachedData) {
-            source = 'cache'
+            source = "cache";
             result = JSON.parse(cachedData);
         } else {
-            const dbRes = await pool.query('SELECT * FROM users');
+            const dbRes = await client.query("SELECT * FROM users");
             result = dbRes.rows;
-            await redis.set('allUser', JSON.stringify(result), 'EX', 30);
-            source = 'db'
+            await redis.set("allUser", JSON.stringify(result), "EX", 30);
+            source = "db";
         }
         const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
         logger.info({
             reqId,
-            route: '/allusers',
+            route: "/allusers",
             source,
             durationMs: durationMs.toFixed(2),
-            rowCount: result.length
-        }, 'request completed');
+            rowCount: result.length,
+        });
         return res.status(200).json({ users: result });
     } catch (e) {
-        console.log(e);
+        const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
         logger.error({
             reqId,
-            route: '/allusers',
+            route: "/allusers",
             durationMs: durationMs.toFixed(2),
-            error: e.message
-        }, 'request failed');
+            error: e.message,
+        });
         return res.status(500).json({ msg: e.message });
+    } finally {
+        await client.release()
     }
 }
 
@@ -72,7 +77,8 @@ export async function getUser(req, res) {
 }
 
 export async function getAllUserMutex(req, res) {
-    const reqId = req.id; 
+    const reqId = req.id;
+    const client = await pool.connect()
     try {
         let cachedData = await redis.get('allUser');
         if (cachedData) {
@@ -88,7 +94,7 @@ export async function getAllUserMutex(req, res) {
                 const dbRes = await pool.query('SELECT * FROM users');
                 const durationMs = Date.now() - start;
                 const result = dbRes.rows;
-                await redis.set('allUser', JSON.stringify(result), 'EX', 30);
+                await redis.set('allUser', JSON.stringify(result), 'EX', 60);
                 logger.info(
                     { reqId, source: 'db', durationMs, rowCount: result.length },
                     'db query completed, cache repopulated'
@@ -121,5 +127,8 @@ export async function getAllUserMutex(req, res) {
     } catch (e) {
         logger.error({ reqId, err: e.message }, 'getAllUserMutex failed');
         return res.status(500).json({ msg: e.message });
+    }
+    finally {
+        await client.release()
     }
 }
