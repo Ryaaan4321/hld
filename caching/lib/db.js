@@ -7,7 +7,7 @@ const pool=new Pool({
     port:process.env.PORT,
     user:process.env.DB_USER,
     password:process.env.PASSWORD,
-    database:process.env.NAME
+    database:process.env.NAME,
 })
 
 export default pool;
