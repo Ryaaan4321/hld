@@ -6,7 +6,7 @@ import writeRouter from './routes/write-through.router.js';
 const app=express();
 app.use(express.json())
 app.use('/api',router);
-writeRouter.use('/api/v1',writeRouter);
+app.use('/api/w1',writeRouter);
 app.listen(3000,()=>{
     console.log("listening listeninggg");
 })

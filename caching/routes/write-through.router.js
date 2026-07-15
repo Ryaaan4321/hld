@@ -1,7 +1,6 @@
 import express from 'express'
-import { getUserById, updateUserWriteThrough } from '../controller.js/write-through.controller';
-
+import { updateUserWriteThrough,getUserById } from '../controller/write-through.controller.js';
 const writeRouter=express.Router();
 writeRouter.get('/:id',getUserById)
-writeRouter.patch('/:id',updateUserWriteThrough)
+writeRouter.put('/update/:id',updateUserWriteThrough)
 export default writeRouter

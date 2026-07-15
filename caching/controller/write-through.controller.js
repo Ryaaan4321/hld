@@ -1,6 +1,6 @@
-import logger from "../lib/logger";
-import redis from "../lib/redis";
-import pool from "../lib/db";
+import logger from "../lib/logger.js";
+import redis from "../lib/redis.js";
+import pool from "../lib/db.js";
 
 export async function createUserWriteThrough(req, res) {
     const reqId = req.id;

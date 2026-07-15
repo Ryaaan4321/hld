@@ -1,6 +1,5 @@
 import express from 'express'
-import { createUser, getAllUser,getAllUserMutex,getAllUserSWR,getUser } from '../controller.js/cacheaside.controller.js';
-
+import { getAllUserSWR,getUser,createUser,getAllUserMutex } from '../controller/cacheaside.controller.js';
 const router=express.Router();
 
 router.post('/',createUser);
